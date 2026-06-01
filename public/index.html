@@ -16,6 +16,7 @@
     justify-content: center;
     text-align: center;
     user-select: none;
+    cursor: default;
   }
   .container { padding: 2rem; }
   .dot {
@@ -39,21 +40,26 @@
   h1 { font-size: 2rem; font-weight: 600; margin-bottom: 0.5rem; }
   .status { color: #999; font-size: 1.1rem; margin-bottom: 1.5rem; }
   .status.live-text { color: #e53e3e; }
-  #tap-btn {
+
+  /* Tap overlay — covers entire screen, invisible but clickable */
+  #tap-overlay {
     display: none;
-    background: #e53e3e;
-    color: #fff;
-    border: none;
-    padding: 1.2rem 3rem;
-    font-size: 1.3rem;
-    font-weight: 600;
-    border-radius: 60px;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 10;
     cursor: pointer;
-    letter-spacing: 0.05em;
-    transition: transform 0.15s;
-    margin-bottom: 1.5rem;
   }
-  #tap-btn:active { transform: scale(0.95); }
+  #tap-hint {
+    display: none;
+    color: #555;
+    font-size: 0.85rem;
+    margin-top: 1rem;
+    animation: fade-hint 2s infinite;
+  }
+  @keyframes fade-hint {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+  }
 
   /* Volume control */
   .volume-control {
@@ -68,8 +74,7 @@
   }
   .vol-icon {
     flex-shrink: 0;
-    width: 22px;
-    height: 22px;
+    width: 22px; height: 22px;
     cursor: pointer;
   }
   .vol-icon svg { display: block; }
@@ -118,10 +123,13 @@
 </style>
 </head>
 <body>
+
+<!-- Invisible full-screen tap target -->
+<div id="tap-overlay"></div>
+
 <div class="container">
   <h1><span class="dot" id="dot"></span><span id="title">Live Stream</span></h1>
   <p class="status" id="status">Connecting...</p>
-  <button id="tap-btn">TAP TO LISTEN</button>
 
   <div class="volume-control" id="volume-control">
     <div class="vol-row">
@@ -145,6 +153,8 @@
   <div class="activity-bar" id="activity-bar">
     <div class="activity-fill" id="activity-fill"></div>
   </div>
+
+  <div id="tap-hint">Tap anywhere to start audio</div>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
@@ -153,7 +163,8 @@
   const dot = document.getElementById('dot');
   const title = document.getElementById('title');
   const status = document.getElementById('status');
-  const tapBtn = document.getElementById('tap-btn');
+  const tapOverlay = document.getElementById('tap-overlay');
+  const tapHint = document.getElementById('tap-hint');
   const volumeControl = document.getElementById('volume-control');
   const volSlider = document.getElementById('vol-slider');
   const volPct = document.getElementById('vol-pct');
@@ -171,6 +182,7 @@
   let audioUnlocked = false;
   let isMuted = false;
   let savedVolume = 80;
+  let bufferedChunks = [];
 
   function ensureAudioCtx() {
     if (!audioCtx) {
@@ -182,24 +194,28 @@
     return audioCtx;
   }
 
-  function tryUnlockAudio() {
+  function unlockAudio() {
+    if (audioUnlocked) return;
     const ctx = ensureAudioCtx();
-    const unlock = () => {
-      audioUnlocked = true;
-      tapBtn.style.display = 'none';
-      if (isLive) showListening();
-    };
-    if (ctx.state === 'suspended') {
-      ctx.resume().then(unlock);
-    } else {
-      unlock();
-    }
-    // iOS unlock
+
+    // iOS unlock trick
     const buf = ctx.createBuffer(1, 1, 22050);
     const src = ctx.createBufferSource();
     src.buffer = buf;
     src.connect(ctx.destination);
     src.start(0);
+
+    ctx.resume().then(() => {
+      audioUnlocked = true;
+      tapOverlay.style.display = 'none';
+      tapHint.style.display = 'none';
+
+      // Play any chunks that arrived while locked
+      bufferedChunks.forEach(playChunk);
+      bufferedChunks = [];
+
+      if (isLive) showListening();
+    });
   }
 
   function showListening() {
@@ -209,14 +225,25 @@
     activityBar.style.display = 'block';
   }
 
-  // Auto-unlock attempt
+  function needsUnlock() {
+    tapOverlay.style.display = 'block';
+    tapHint.style.display = 'block';
+  }
+
+  // --- Try autoplay on load ---
   ensureAudioCtx();
-  if (audioCtx.state === 'running') audioUnlocked = true;
+  audioCtx.resume().then(() => {
+    if (audioCtx.state === 'running') {
+      audioUnlocked = true;
+    }
+  });
 
-  tapBtn.addEventListener('click', tryUnlockAudio);
-  document.body.addEventListener('click', tryUnlockAudio, { once: true });
+  // --- Unlock on ANY user interaction ---
+  ['click', 'touchstart', 'pointerdown', 'keydown'].forEach(evt => {
+    document.addEventListener(evt, unlockAudio, { once: false, capture: true });
+  });
 
-  // Volume slider
+  // --- Volume slider ---
   volSlider.addEventListener('input', () => {
     const v = volSlider.value;
     volPct.textContent = v + '%';
@@ -227,7 +254,6 @@
     if (!isMuted) savedVolume = v;
   });
 
-  // Mute button
   muteBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     if (isMuted) {
@@ -248,53 +274,10 @@
     }
   });
 
-  // Socket
-  const socket = io({ query: { broadcaster: '' } });
-
-  socket.on('connect', () => {
-    if (!isLive) status.textContent = 'Waiting for broadcast...';
-  });
-
-  socket.on('disconnect', () => {
-    status.textContent = 'Reconnecting...';
-    status.className = 'status';
-    dot.className = 'dot';
-    volumeControl.style.display = 'none';
-    activityBar.style.display = 'none';
-  });
-
-  socket.on('status', (data) => {
-    isLive = data.live;
-    if (data.live) {
-      dot.className = 'dot live';
-      title.textContent = 'LIVE';
-      nextPlayTime = 0;
-      if (audioUnlocked) {
-        showListening();
-      } else {
-        status.textContent = 'Broadcast started!';
-        status.className = 'status live-text';
-        tapBtn.style.display = 'inline-block';
-      }
-    } else {
-      dot.className = 'dot';
-      title.textContent = 'Live Stream';
-      status.textContent = 'Waiting for broadcast...';
-      status.className = 'status';
-      tapBtn.style.display = 'none';
-      volumeControl.style.display = 'none';
-      activityBar.style.display = 'none';
-    }
-  });
-
-  socket.on('audio', (data) => {
-    if (!audioUnlocked) {
-      tapBtn.style.display = 'inline-block';
-      return;
-    }
-
+  // --- Audio playback ---
+  function playChunk(data) {
     const ctx = ensureAudioCtx();
-    if (ctx.state === 'suspended') { ctx.resume(); return; }
+    if (ctx.state === 'suspended') return;
 
     const int16 = new Int16Array(data);
     const float32 = new Float32Array(int16.length);
@@ -305,7 +288,6 @@
       if (abs > peak) peak = abs;
     }
 
-    // Activity meter
     const pct = Math.min(100, Math.round(peak * 200));
     activityFill.style.width = pct + '%';
 
@@ -322,6 +304,60 @@
     }
     source.start(nextPlayTime);
     nextPlayTime += buffer.duration;
+  }
+
+  // --- Socket ---
+  const socket = io({ query: { broadcaster: '' } });
+
+  socket.on('connect', () => {
+    if (!isLive) status.textContent = 'Waiting for broadcast...';
+  });
+
+  socket.on('disconnect', () => {
+    status.textContent = 'Reconnecting...';
+    status.className = 'status';
+    dot.className = 'dot';
+    volumeControl.style.display = 'none';
+    activityBar.style.display = 'none';
+    tapOverlay.style.display = 'none';
+    tapHint.style.display = 'none';
+  });
+
+  socket.on('status', (data) => {
+    isLive = data.live;
+    if (data.live) {
+      dot.className = 'dot live';
+      title.textContent = 'LIVE';
+      nextPlayTime = 0;
+      bufferedChunks = [];
+      if (audioUnlocked) {
+        showListening();
+      } else {
+        status.textContent = 'LIVE';
+        status.className = 'status live-text';
+        needsUnlock();
+      }
+    } else {
+      dot.className = 'dot';
+      title.textContent = 'Live Stream';
+      status.textContent = 'Waiting for broadcast...';
+      status.className = 'status';
+      volumeControl.style.display = 'none';
+      activityBar.style.display = 'none';
+      tapOverlay.style.display = 'none';
+      tapHint.style.display = 'none';
+    }
+  });
+
+  socket.on('audio', (data) => {
+    if (!audioUnlocked) {
+      // Buffer a small amount so audio starts instantly on unlock
+      if (bufferedChunks.length < 3) bufferedChunks.push(data);
+      else { bufferedChunks.shift(); bufferedChunks.push(data); }
+      needsUnlock();
+      return;
+    }
+    playChunk(data);
   });
 })();
 </script>
