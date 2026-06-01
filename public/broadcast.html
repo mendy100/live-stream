@@ -369,12 +369,19 @@
     monitorGain = audioCtx.createGain();
     monitorGain.gain.value = monitorSlider.value / 100;
 
-    const bufferSize = 4096;
+    const bufferSize = 1024;
     processor = audioCtx.createScriptProcessor(bufferSize, 1, 1);
     const downsampleRatio = Math.round(audioCtx.sampleRate / TARGET_RATE);
 
+    // Silent output node — keeps processor alive without playing audio to speakers
+    const silentGain = audioCtx.createGain();
+    silentGain.gain.value = 0;
+
     processor.onaudioprocess = (e) => {
       const input = e.inputBuffer.getChannelData(0);
+      const output = e.outputBuffer.getChannelData(0);
+      output.fill(0); // silence the output — prevents echo
+
       const len = Math.floor(input.length / downsampleRatio);
       const int16 = new Int16Array(len);
       let peak = 0;
@@ -386,7 +393,6 @@
         int16[i] = Math.max(-32768, Math.min(32767, Math.floor(sample * 32767)));
       }
 
-      // Level meter
       const pct = Math.min(100, Math.round(peak * 200));
       levelFill.style.width = pct + '%';
       levelFill.className = 'level-fill' + (pct > 90 ? ' clip' : pct > 70 ? ' hot' : '');
@@ -394,11 +400,12 @@
       socket.emit('audio', int16.buffer);
     };
 
-    // source → gain → processor → (silence destination)
-    // source → gain → monitor → speakers
+    // source → gain → processor → silent → destination (keeps processor alive)
+    // source → gain → monitor → destination (only plays if monitor > 0)
     sourceNode.connect(gainNode);
     gainNode.connect(processor);
-    processor.connect(audioCtx.destination);
+    processor.connect(silentGain);
+    silentGain.connect(audioCtx.destination);
     gainNode.connect(monitorGain);
     monitorGain.connect(audioCtx.destination);
 
