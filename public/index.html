@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Stream</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0a0a0a;
+    color: #fff;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    user-select: none;
+  }
+  .container { padding: 2rem; }
+  .dot {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: middle;
+    background: #444;
+    transition: background 0.3s;
+  }
+  .dot.live {
+    background: #e53e3e;
+    box-shadow: 0 0 12px #e53e3e;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  h1 { font-size: 2rem; font-weight: 600; margin-bottom: 0.5rem; }
+  .status { color: #999; font-size: 1.1rem; margin-bottom: 1.5rem; }
+  .status.live-text { color: #e53e3e; }
+  #tap-btn {
+    display: none;
+    background: #e53e3e;
+    color: #fff;
+    border: none;
+    padding: 1.2rem 3rem;
+    font-size: 1.3rem;
+    font-weight: 600;
+    border-radius: 60px;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    transition: transform 0.15s;
+    margin-bottom: 1.5rem;
+  }
+  #tap-btn:active { transform: scale(0.95); }
+
+  /* Volume control */
+  .volume-control {
+    display: none;
+    margin: 0 auto;
+    width: 220px;
+  }
+  .vol-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .vol-icon {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    cursor: pointer;
+  }
+  .vol-icon svg { display: block; }
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: #222;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    border: none;
+  }
+  .vol-pct {
+    font-size: 0.8rem;
+    color: #666;
+    width: 36px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  /* Activity bar */
+  .activity-bar {
+    display: none;
+    width: 180px;
+    height: 4px;
+    background: #191919;
+    border-radius: 2px;
+    margin: 1rem auto 0;
+    overflow: hidden;
+  }
+  .activity-fill {
+    height: 100%;
+    width: 0%;
+    background: #4ade80;
+    border-radius: 2px;
+    transition: width 0.1s;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1><span class="dot" id="dot"></span><span id="title">Live Stream</span></h1>
+  <p class="status" id="status">Connecting...</p>
+  <button id="tap-btn">TAP TO LISTEN</button>
+
+  <div class="volume-control" id="volume-control">
+    <div class="vol-row">
+      <div class="vol-icon" id="mute-btn" title="Mute / Unmute">
+        <svg id="vol-icon-on" viewBox="0 0 24 24" fill="none" stroke="#aaa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+        </svg>
+        <svg id="vol-icon-off" viewBox="0 0 24 24" fill="none" stroke="#e53e3e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <line x1="23" y1="9" x2="17" y2="15"/>
+          <line x1="17" y1="9" x2="23" y2="15"/>
+        </svg>
+      </div>
+      <input type="range" id="vol-slider" min="0" max="100" value="80">
+      <span class="vol-pct" id="vol-pct">80%</span>
+    </div>
+  </div>
+
+  <div class="activity-bar" id="activity-bar">
+    <div class="activity-fill" id="activity-fill"></div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(function() {
+  const dot = document.getElementById('dot');
+  const title = document.getElementById('title');
+  const status = document.getElementById('status');
+  const tapBtn = document.getElementById('tap-btn');
+  const volumeControl = document.getElementById('volume-control');
+  const volSlider = document.getElementById('vol-slider');
+  const volPct = document.getElementById('vol-pct');
+  const muteBtn = document.getElementById('mute-btn');
+  const volIconOn = document.getElementById('vol-icon-on');
+  const volIconOff = document.getElementById('vol-icon-off');
+  const activityBar = document.getElementById('activity-bar');
+  const activityFill = document.getElementById('activity-fill');
+
+  const PLAYBACK_RATE = 16000;
+  let audioCtx = null;
+  let masterGain = null;
+  let nextPlayTime = 0;
+  let isLive = false;
+  let audioUnlocked = false;
+  let isMuted = false;
+  let savedVolume = 80;
+
+  function ensureAudioCtx() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = audioCtx.createGain();
+      masterGain.gain.value = volSlider.value / 100;
+      masterGain.connect(audioCtx.destination);
+    }
+    return audioCtx;
+  }
+
+  function tryUnlockAudio() {
+    const ctx = ensureAudioCtx();
+    const unlock = () => {
+      audioUnlocked = true;
+      tapBtn.style.display = 'none';
+      if (isLive) showListening();
+    };
+    if (ctx.state === 'suspended') {
+      ctx.resume().then(unlock);
+    } else {
+      unlock();
+    }
+    // iOS unlock
+    const buf = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0);
+  }
+
+  function showListening() {
+    status.textContent = 'Listening...';
+    status.className = 'status live-text';
+    volumeControl.style.display = 'block';
+    activityBar.style.display = 'block';
+  }
+
+  // Auto-unlock attempt
+  ensureAudioCtx();
+  if (audioCtx.state === 'running') audioUnlocked = true;
+
+  tapBtn.addEventListener('click', tryUnlockAudio);
+  document.body.addEventListener('click', tryUnlockAudio, { once: true });
+
+  // Volume slider
+  volSlider.addEventListener('input', () => {
+    const v = volSlider.value;
+    volPct.textContent = v + '%';
+    if (masterGain) masterGain.gain.value = v / 100;
+    isMuted = (v == 0);
+    volIconOn.style.display = isMuted ? 'none' : 'block';
+    volIconOff.style.display = isMuted ? 'block' : 'none';
+    if (!isMuted) savedVolume = v;
+  });
+
+  // Mute button
+  muteBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (isMuted) {
+      isMuted = false;
+      volSlider.value = savedVolume;
+      volPct.textContent = savedVolume + '%';
+      if (masterGain) masterGain.gain.value = savedVolume / 100;
+      volIconOn.style.display = 'block';
+      volIconOff.style.display = 'none';
+    } else {
+      isMuted = true;
+      savedVolume = volSlider.value;
+      volSlider.value = 0;
+      volPct.textContent = '0%';
+      if (masterGain) masterGain.gain.value = 0;
+      volIconOn.style.display = 'none';
+      volIconOff.style.display = 'block';
+    }
+  });
+
+  // Socket
+  const socket = io({ query: { broadcaster: '' } });
+
+  socket.on('connect', () => {
+    if (!isLive) status.textContent = 'Waiting for broadcast...';
+  });
+
+  socket.on('disconnect', () => {
+    status.textContent = 'Reconnecting...';
+    status.className = 'status';
+    dot.className = 'dot';
+    volumeControl.style.display = 'none';
+    activityBar.style.display = 'none';
+  });
+
+  socket.on('status', (data) => {
+    isLive = data.live;
+    if (data.live) {
+      dot.className = 'dot live';
+      title.textContent = 'LIVE';
+      nextPlayTime = 0;
+      if (audioUnlocked) {
+        showListening();
+      } else {
+        status.textContent = 'Broadcast started!';
+        status.className = 'status live-text';
+        tapBtn.style.display = 'inline-block';
+      }
+    } else {
+      dot.className = 'dot';
+      title.textContent = 'Live Stream';
+      status.textContent = 'Waiting for broadcast...';
+      status.className = 'status';
+      tapBtn.style.display = 'none';
+      volumeControl.style.display = 'none';
+      activityBar.style.display = 'none';
+    }
+  });
+
+  socket.on('audio', (data) => {
+    if (!audioUnlocked) {
+      tapBtn.style.display = 'inline-block';
+      return;
+    }
+
+    const ctx = ensureAudioCtx();
+    if (ctx.state === 'suspended') { ctx.resume(); return; }
+
+    const int16 = new Int16Array(data);
+    const float32 = new Float32Array(int16.length);
+    let peak = 0;
+    for (let i = 0; i < int16.length; i++) {
+      float32[i] = int16[i] / 32767;
+      const abs = Math.abs(float32[i]);
+      if (abs > peak) peak = abs;
+    }
+
+    // Activity meter
+    const pct = Math.min(100, Math.round(peak * 200));
+    activityFill.style.width = pct + '%';
+
+    const buffer = ctx.createBuffer(1, float32.length, PLAYBACK_RATE);
+    buffer.getChannelData(0).set(float32);
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(masterGain);
+
+    const now = ctx.currentTime;
+    if (nextPlayTime < now || nextPlayTime > now + 2) {
+      nextPlayTime = now + 0.05;
+    }
+    source.start(nextPlayTime);
+    nextPlayTime += buffer.duration;
+  });
+})();
+</script>
+</body>
+</html>

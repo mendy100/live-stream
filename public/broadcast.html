@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Broadcast Console</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0a0a0a;
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .container { padding: 2rem; width: 100%; max-width: 440px; }
+  h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 1.5rem; color: #ccc; text-align: center; }
+
+  /* Sections */
+  .section { margin-bottom: 1.2rem; }
+  .section-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #666;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Inputs */
+  select, input[type="password"] {
+    width: 100%;
+    padding: 0.7rem 0.8rem;
+    font-size: 0.95rem;
+    border: 2px solid #252525;
+    border-radius: 8px;
+    background: #111;
+    color: #fff;
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  select { cursor: pointer; background: #111 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23666' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat right 12px center; padding-right: 2rem; }
+  select:focus, input:focus { border-color: #444; }
+
+  /* Source buttons row */
+  .source-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+  .source-btn {
+    flex: 1;
+    padding: 0.6rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    border: 2px solid #252525;
+    border-radius: 8px;
+    background: #111;
+    color: #aaa;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+  }
+  .source-btn:hover { border-color: #444; color: #fff; }
+  .source-btn.active { border-color: #4ade80; color: #4ade80; }
+
+  /* Sliders */
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin-bottom: 0.6rem;
+  }
+  .slider-label { font-size: 0.85rem; color: #aaa; width: 65px; flex-shrink: 0; }
+  .slider-val { font-size: 0.8rem; color: #666; width: 38px; text-align: right; flex-shrink: 0; }
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: #222;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    border: none;
+  }
+
+  /* Level meter */
+  .level-bar {
+    width: 100%;
+    height: 8px;
+    background: #191919;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .level-fill {
+    height: 100%;
+    width: 0%;
+    background: #4ade80;
+    border-radius: 4px;
+    transition: width 0.05s;
+  }
+  .level-fill.hot { background: #facc15; }
+  .level-fill.clip { background: #e53e3e; }
+
+  /* Buttons */
+  .actions { text-align: center; margin-top: 1.5rem; }
+  button.primary {
+    width: 100%;
+    padding: 1rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+  button.primary:active { transform: scale(0.97); }
+  #go-live-btn { background: #e53e3e; color: #fff; }
+  #stop-btn { background: #333; color: #fff; display: none; }
+
+  .live-badge {
+    display: none;
+    text-align: center;
+    margin-bottom: 1.2rem;
+    font-size: 1.3rem;
+    font-weight: 600;
+  }
+  .dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: #e53e3e;
+    box-shadow: 0 0 8px #e53e3e;
+    animation: pulse 1.5s infinite;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  .listeners {
+    display: none;
+    text-align: center;
+    margin-top: 1rem;
+    font-size: 1.1rem;
+    color: #999;
+  }
+  .listeners span { color: #fff; font-weight: 600; }
+  .error { color: #e53e3e; margin-top: 0.5rem; font-size: 0.9rem; text-align: center; display: none; }
+  .source-name { font-size: 0.8rem; color: #4ade80; margin-top: 0.4rem; text-align: center; display: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Broadcast Console</h1>
+  <div class="live-badge" id="live-badge"><span class="dot"></span> LIVE</div>
+
+  <!-- Audio Source -->
+  <div class="section" id="source-section">
+    <div class="section-label">Audio Source</div>
+    <select id="device-select"><option value="">Loading devices...</option></select>
+    <div class="source-row">
+      <button class="source-btn active" id="mic-btn">Microphone</button>
+      <button class="source-btn" id="system-btn">System Audio</button>
+    </div>
+    <div class="source-name" id="source-name"></div>
+  </div>
+
+  <!-- Controls -->
+  <div class="section">
+    <div class="section-label">Controls</div>
+    <div class="slider-row">
+      <span class="slider-label">Gain</span>
+      <input type="range" id="gain-slider" min="0" max="300" value="100">
+      <span class="slider-val" id="gain-val">100%</span>
+    </div>
+    <div class="slider-row">
+      <span class="slider-label">Monitor</span>
+      <input type="range" id="monitor-slider" min="0" max="100" value="0">
+      <span class="slider-val" id="monitor-val">0%</span>
+    </div>
+  </div>
+
+  <!-- Level -->
+  <div class="section">
+    <div class="section-label">Level</div>
+    <div class="level-bar">
+      <div class="level-fill" id="level-fill"></div>
+    </div>
+  </div>
+
+  <!-- Key + Buttons -->
+  <div class="section" id="key-section">
+    <div class="section-label">Broadcast Key</div>
+    <input type="password" id="key-input" placeholder="Enter key" autocomplete="off">
+  </div>
+
+  <p class="error" id="error"></p>
+
+  <div class="actions">
+    <button class="primary" id="go-live-btn">GO LIVE</button>
+    <button class="primary" id="stop-btn">STOP BROADCAST</button>
+  </div>
+
+  <div class="listeners" id="listeners-box">
+    <span id="listener-count">0</span> listening
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(function() {
+  const deviceSelect = document.getElementById('device-select');
+  const micBtn = document.getElementById('mic-btn');
+  const systemBtn = document.getElementById('system-btn');
+  const sourceName = document.getElementById('source-name');
+  const gainSlider = document.getElementById('gain-slider');
+  const gainVal = document.getElementById('gain-val');
+  const monitorSlider = document.getElementById('monitor-slider');
+  const monitorVal = document.getElementById('monitor-val');
+  const levelFill = document.getElementById('level-fill');
+  const keyInput = document.getElementById('key-input');
+  const goLiveBtn = document.getElementById('go-live-btn');
+  const stopBtn = document.getElementById('stop-btn');
+  const sourceSection = document.getElementById('source-section');
+  const keySection = document.getElementById('key-section');
+  const liveBadge = document.getElementById('live-badge');
+  const listenersBox = document.getElementById('listeners-box');
+  const listenerCount = document.getElementById('listener-count');
+  const errorEl = document.getElementById('error');
+
+  const TARGET_RATE = 16000;
+  let socket = null;
+  let audioCtx = null;
+  let mediaStream = null;
+  let processor = null;
+  let gainNode = null;
+  let monitorGain = null;
+  let sourceNode = null;
+  let useSystemAudio = false;
+
+  // --- Device enumeration ---
+  async function loadDevices() {
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {}
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const audioInputs = devices.filter(d => d.kind === 'audioinput');
+    deviceSelect.innerHTML = '';
+    audioInputs.forEach((d, i) => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || ('Microphone ' + (i + 1));
+      deviceSelect.appendChild(opt);
+    });
+  }
+  loadDevices();
+  navigator.mediaDevices.addEventListener('devicechange', loadDevices);
+
+  // --- Source toggle ---
+  micBtn.addEventListener('click', () => {
+    useSystemAudio = false;
+    micBtn.classList.add('active');
+    systemBtn.classList.remove('active');
+    deviceSelect.disabled = false;
+    sourceName.style.display = 'none';
+  });
+
+  systemBtn.addEventListener('click', () => {
+    useSystemAudio = true;
+    systemBtn.classList.add('active');
+    micBtn.classList.remove('active');
+    deviceSelect.disabled = true;
+    sourceName.style.display = 'none';
+  });
+
+  // --- Sliders ---
+  gainSlider.addEventListener('input', () => {
+    const pct = gainSlider.value;
+    gainVal.textContent = pct + '%';
+    if (gainNode) gainNode.gain.value = pct / 100;
+  });
+
+  monitorSlider.addEventListener('input', () => {
+    const pct = monitorSlider.value;
+    monitorVal.textContent = pct + '%';
+    if (monitorGain) monitorGain.gain.value = pct / 100;
+  });
+
+  // --- Socket ---
+  socket = io({ query: { broadcaster: '1' } });
+  socket.on('listeners', (c) => { listenerCount.textContent = c; });
+  socket.on('auth-error', () => {
+    showError('Wrong broadcast key');
+    goLiveBtn.disabled = false;
+    goLiveBtn.textContent = 'GO LIVE';
+  });
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.style.display = 'block';
+  }
+
+  // --- Get audio stream ---
+  async function getAudioStream() {
+    if (useSystemAudio) {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true,
+        systemAudio: 'include',
+      });
+      // Stop the video track — we only need audio
+      stream.getVideoTracks().forEach(t => t.stop());
+      if (stream.getAudioTracks().length === 0) {
+        throw new Error('No audio was shared. Make sure to check "Share system audio" or select a tab/window with audio.');
+      }
+      const label = stream.getAudioTracks()[0].label || 'System Audio';
+      sourceName.textContent = label;
+      sourceName.style.display = 'block';
+      return stream;
+    } else {
+      const deviceId = deviceSelect.value;
+      const constraints = { audio: deviceId ? { deviceId: { exact: deviceId } } : true, video: false };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const label = stream.getAudioTracks()[0].label || 'Microphone';
+      sourceName.textContent = label;
+      sourceName.style.display = 'block';
+      return stream;
+    }
+  }
+
+  // --- Go Live ---
+  goLiveBtn.addEventListener('click', async () => {
+    errorEl.style.display = 'none';
+    goLiveBtn.disabled = true;
+    goLiveBtn.textContent = 'Starting...';
+
+    try {
+      mediaStream = await getAudioStream();
+    } catch (err) {
+      showError(useSystemAudio
+        ? 'System audio not available. Check "Share system audio" when sharing.'
+        : 'Mic access denied');
+      goLiveBtn.disabled = false;
+      goLiveBtn.textContent = 'GO LIVE';
+      return;
+    }
+
+    const key = keyInput.value || 'go-live';
+    socket.emit('start-broadcast', key);
+    await new Promise(r => setTimeout(r, 300));
+    if (errorEl.style.display === 'block') {
+      mediaStream.getTracks().forEach(t => t.stop());
+      mediaStream = null;
+      return;
+    }
+
+    // Build audio graph
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+    sourceNode = audioCtx.createMediaStreamSource(mediaStream);
+
+    gainNode = audioCtx.createGain();
+    gainNode.gain.value = gainSlider.value / 100;
+
+    monitorGain = audioCtx.createGain();
+    monitorGain.gain.value = monitorSlider.value / 100;
+
+    const bufferSize = 4096;
+    processor = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+    const downsampleRatio = Math.round(audioCtx.sampleRate / TARGET_RATE);
+
+    processor.onaudioprocess = (e) => {
+      const input = e.inputBuffer.getChannelData(0);
+      const len = Math.floor(input.length / downsampleRatio);
+      const int16 = new Int16Array(len);
+      let peak = 0;
+
+      for (let i = 0; i < len; i++) {
+        const sample = input[i * downsampleRatio];
+        const abs = Math.abs(sample);
+        if (abs > peak) peak = abs;
+        int16[i] = Math.max(-32768, Math.min(32767, Math.floor(sample * 32767)));
+      }
+
+      // Level meter
+      const pct = Math.min(100, Math.round(peak * 200));
+      levelFill.style.width = pct + '%';
+      levelFill.className = 'level-fill' + (pct > 90 ? ' clip' : pct > 70 ? ' hot' : '');
+
+      socket.emit('audio', int16.buffer);
+    };
+
+    // source → gain → processor → (silence destination)
+    // source → gain → monitor → speakers
+    sourceNode.connect(gainNode);
+    gainNode.connect(processor);
+    processor.connect(audioCtx.destination);
+    gainNode.connect(monitorGain);
+    monitorGain.connect(audioCtx.destination);
+
+    // Handle stream ending (e.g., user stops sharing system audio)
+    mediaStream.getAudioTracks()[0].addEventListener('ended', () => {
+      stopBtn.click();
+    });
+
+    // UI
+    sourceSection.style.display = 'none';
+    keySection.style.display = 'none';
+    liveBadge.style.display = 'block';
+    goLiveBtn.style.display = 'none';
+    stopBtn.style.display = 'block';
+    listenersBox.style.display = 'block';
+  });
+
+  // --- Stop ---
+  stopBtn.addEventListener('click', () => {
+    socket.emit('stop-broadcast');
+    if (processor) { processor.disconnect(); processor = null; }
+    if (monitorGain) { monitorGain.disconnect(); monitorGain = null; }
+    if (gainNode) { gainNode.disconnect(); gainNode = null; }
+    if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
+    if (audioCtx) { audioCtx.close(); audioCtx = null; }
+    if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+
+    sourceSection.style.display = 'block';
+    keySection.style.display = 'block';
+    liveBadge.style.display = 'none';
+    goLiveBtn.style.display = 'block';
+    goLiveBtn.disabled = false;
+    goLiveBtn.textContent = 'GO LIVE';
+    stopBtn.style.display = 'none';
+    listenersBox.style.display = 'none';
+    sourceName.style.display = 'none';
+    keyInput.value = '';
+    levelFill.style.width = '0%';
+  });
+
+  keyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') goLiveBtn.click(); });
+})();
+</script>
+</body>
+</html>
