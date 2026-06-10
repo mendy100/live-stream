@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="/manifest.json">
+<title>Live Stream</title>
+<style>
+  body {
+    margin: 0;
+    background: #000;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  audio {
+    width: 90%;
+    max-width: 400px;
+  }
+</style>
+</head>
+<body>
+<audio id="player" autoplay controls preload="none"></audio>
+<script>
+  // Extract channel ID from URL: /s/:id
+  const channelId = window.location.pathname.split('/')[2];
+  const player = document.getElementById('player');
+  player.src = '/s/' + channelId + '/stream';
+</script>
+</body>
+</html>

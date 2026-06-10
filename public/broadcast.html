@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="manifest" href="/manifest.json">
 <title>Broadcast Console</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -291,8 +293,11 @@
     if (monitorGain) monitorGain.gain.value = pct / 100;
   });
 
+  // --- Channel ID from URL: /s/:id/broadcast ---
+  const channelId = window.location.pathname.split('/')[2];
+
   // --- Socket ---
-  socket = io({ query: { broadcaster: '1' } });
+  socket = io({ query: { broadcaster: '1', channel: channelId } });
   socket.on('listeners', (c) => { listenerCount.textContent = c; });
   socket.on('auth-error', () => {
     showError('Wrong broadcast key');
