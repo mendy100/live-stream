@@ -227,6 +227,22 @@ io.on('connection', (socket) => {
   });
 });
 
+// Seed default channel so it survives Render redeploys
+function seedChannels() {
+  const channels = loadChannels();
+  if (!channels['q4625p']) {
+    channels['q4625p'] = {
+      id: 'q4625p',
+      name: 'My Stream',
+      broadcastKey: 'LgPDW26rae8w',
+      createdAt: '2026-06-17T00:00:00.000Z',
+      tier: 'free',
+    };
+    saveChannels(channels);
+  }
+}
+seedChannels();
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`\n  Live Stream Platform running on http://localhost:${PORT}\n`);
