@@ -46,11 +46,11 @@ function generateKey() {
 }
 
 // --- Runtime state per channel ---
-const channelState = {}; // { [id]: { isLive, listenerCount, streamListeners: [] } }
+const channelState = {}; // { [id]: { isLive, listenerCount, streamListeners: [], piStatus: {} } }
 
 function getState(id) {
   if (!channelState[id]) {
-    channelState[id] = { isLive: false, listenerCount: 0, streamListeners: [] };
+    channelState[id] = { isLive: false, listenerCount: 0, streamListeners: [], piStatus: null };
   }
   return channelState[id];
 }
@@ -123,6 +123,12 @@ app.get('/s/:id/broadcast', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'broadcast.html'));
 });
 
+app.get('/s/:id/control', (req, res) => {
+  const channels = loadChannels();
+  if (!channels[req.params.id]) return res.status(404).send('Channel not found');
+  res.sendFile(path.join(__dirname, 'public', 'control.html'));
+});
+
 // --- Audio stream endpoint ---
 app.get('/s/:id/stream', (req, res) => {
   const channels = loadChannels();
@@ -173,8 +179,9 @@ io.on('connection', (socket) => {
     }
     socket.isBroadcaster = true;
     socket.channelId = channelId;
+    socket.broadcasterType = socket.handshake.query.type || 'web';
     state.isLive = true;
-    io.to(room).emit('status', { live: true });
+    io.to(room).emit('status', { live: true, piConnected: !!state.piStatus });
   });
 
   socket.on('audio', (data) => {
@@ -187,6 +194,12 @@ io.on('connection', (socket) => {
     socket.to(room).emit('audio', data);
   });
 
+  socket.on('pi-status', (info) => {
+    if (!socket.isBroadcaster || socket.broadcasterType !== 'pi') return;
+    state.piStatus = { ...info, lastSeen: Date.now() };
+    io.to(room).emit('pi-status', state.piStatus);
+  });
+
   socket.on('stop-broadcast', () => {
     if (!socket.isBroadcaster) return;
     state.isLive = false;
@@ -195,8 +208,17 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     if (socket.isBroadcaster) {
-      state.isLive = false;
-      io.to(room).emit('status', { live: false });
+      if (socket.broadcasterType === 'pi') {
+        state.piStatus = null;
+        io.to(room).emit('pi-status', null);
+      }
+      const hasOtherBroadcasters = [...io.sockets.sockets.values()].some(
+        s => s !== socket && s.isBroadcaster && s.channelId === channelId
+      );
+      if (!hasOtherBroadcasters) {
+        state.isLive = false;
+        io.to(room).emit('status', { live: false });
+      }
     }
     if (!isBroadcaster) {
       state.listenerCount = Math.max(0, state.listenerCount - 1);
