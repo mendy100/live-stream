@@ -110,7 +110,7 @@ def launch(key):
     cfg = APPS[key]
     subprocess.run(['pkill', '-f', 'chromium'], check=False)
     time.sleep(1)
-    args = [CHROMIUM, '--app=' + cfg['url'], '--window-size=800,480',
+    args = [CHROMIUM, '--kiosk', '--app=' + cfg['url'], '--window-size=800,480',
             '--window-position=0,0', '--noerrdialogs', '--disable-infobars',
             '--disable-session-crashed-bubble']
     if cfg['scale']:
@@ -180,7 +180,7 @@ runasp python3 launcher-server.py &
 sleep 2
 runasp python3 home-button.py &
 sleep 1
-runasp "$CHROMIUM" --no-sandbox --app=http://127.0.0.1:5050/launcher.html --window-size=800,480 --window-position=0,0 --noerrdialogs --disable-infobars --disable-session-crashed-bubble &
+runasp "$CHROMIUM" --kiosk --app=http://127.0.0.1:5050/launcher.html --window-size=800,480 --window-position=0,0 --noerrdialogs --disable-infobars --disable-session-crashed-bubble &
 EOF
 chmod +x "$KIOSK_DIR/start-kiosk.sh"
 
