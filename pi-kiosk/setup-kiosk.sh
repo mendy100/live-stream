@@ -161,19 +161,26 @@ root.mainloop()
 EOF
 
 # --- start-kiosk.sh: orchestrates startup order ---
-cat > "$KIOSK_DIR/start-kiosk.sh" << EOF
+# Always runs the GUI pieces as the 'pi' user against the real display :0,
+# regardless of whether this script itself is invoked as root or via SSH.
+# (Quoted 'EOF' below so nothing is expanded now -- it's expanded when
+# start-kiosk.sh itself runs, on the Pi's real desktop session.)
+cat > "$KIOSK_DIR/start-kiosk.sh" << 'EOF'
 #!/bin/bash
+KIOSK_DIR="/home/pi/kiosk"
+CHROMIUM=$(command -v chromium-browser || command -v chromium || echo chromium-browser)
 cd "$KIOSK_DIR"
-pkill -f launcher-server.py 2>/dev/null
-pkill -f home-button.py 2>/dev/null
-pkill -f chromium 2>/dev/null
+runasp() { sudo -u pi env DISPLAY=:0 XAUTHORITY=/home/pi/.Xauthority "$@"; }
+runasp pkill -f launcher-server.py 2>/dev/null
+runasp pkill -f home-button.py 2>/dev/null
+runasp pkill -f chromium 2>/dev/null
 sleep 1
-unclutter -idle 0.5 -root &
-python3 launcher-server.py &
+runasp unclutter -idle 0.5 -root &
+runasp python3 launcher-server.py &
 sleep 2
-python3 home-button.py &
+runasp python3 home-button.py &
 sleep 1
-$CHROMIUM --app=http://127.0.0.1:5050/launcher.html --window-size=800,480 --window-position=0,0 --noerrdialogs --disable-infobars --disable-session-crashed-bubble &
+runasp "$CHROMIUM" --no-sandbox --app=http://127.0.0.1:5050/launcher.html --window-size=800,480 --window-position=0,0 --noerrdialogs --disable-infobars --disable-session-crashed-bubble &
 EOF
 chmod +x "$KIOSK_DIR/start-kiosk.sh"
 
@@ -185,6 +192,8 @@ Type=Application
 Name=Kiosk
 Exec=$KIOSK_DIR/start-kiosk.sh
 EOF
+
+chown -R pi:pi "$KIOSK_DIR" /home/pi/.config/autostart 2>/dev/null || true
 
 echo ""
 echo "Setup complete. Starting the kiosk now..."
