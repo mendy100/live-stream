@@ -129,6 +129,12 @@ app.get('/s/:id/control', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'control.html'));
 });
 
+app.get('/s/:id/screen', (req, res) => {
+  const channels = loadChannels();
+  if (!channels[req.params.id]) return res.status(404).send('Channel not found');
+  res.sendFile(path.join(__dirname, 'public', 'screen.html'));
+});
+
 // --- Audio stream endpoint ---
 app.get('/s/:id/stream', (req, res) => {
   const channels = loadChannels();
