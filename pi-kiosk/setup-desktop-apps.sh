@@ -20,7 +20,7 @@ make_icon() {
 Type=Application
 Name=$name
 Comment=$name
-Exec=$CHROMIUM --app=$url --window-size=800,480 --window-position=0,0 --noerrdialogs --disable-infobars --disable-session-crashed-bubble --use-fake-ui-for-media-stream $scaleflag
+Exec=$CHROMIUM --app=$url --window-size=800,480 --window-position=0,0 --noerrdialogs --disable-infobars --disable-session-crashed-bubble --use-fake-ui-for-media-stream --password-store=basic $scaleflag
 Terminal=false
 Categories=Network;
 EOF
