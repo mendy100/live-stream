@@ -9,8 +9,9 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     width: 800px;
-    height: 480px;
-    overflow: hidden;
+    min-height: 480px;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -58,7 +59,7 @@
   /* ---- Main kiosk layout ---- */
   .kiosk {
     display: none;
-    height: 480px;
+    min-height: 480px;
     grid-template-columns: 1fr 1fr;
     gap: 0.75rem;
     padding: 0.75rem;
