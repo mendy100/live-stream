@@ -206,11 +206,14 @@ if __name__ == '__main__':
     main()
 PYEOF
 
+PROFILE_DIR="$KIOSK_DIR/profiles"
+mkdir -p "$PROFILE_DIR"
+
 cat > "$KIOSK_DIR/quick-record-launch.sh" << EOF
 #!/bin/bash
 pkill -f chromium 2>/dev/null
 sleep 1
-$CHROMIUM --remote-debugging-port=9223 --remote-allow-origins=* --app=https://ivr.teltech.info/portal/extensions/ --window-size=800,480 --window-position=0,0 --noerrdialogs --disable-infobars --disable-session-crashed-bubble --use-fake-ui-for-media-stream --password-store=basic &
+$CHROMIUM --user-data-dir=$PROFILE_DIR/quick-record --remote-debugging-port=9223 --remote-allow-origins=* --app=https://ivr.teltech.info/portal/extensions/ --window-size=800,480 --window-position=0,0 --noerrdialogs --disable-infobars --disable-session-crashed-bubble --use-fake-ui-for-media-stream --password-store=basic &
 sleep 3
 python3 "$KIOSK_DIR/ivr-inject.py"
 EOF
@@ -218,6 +221,7 @@ chmod +x "$KIOSK_DIR/quick-record-launch.sh"
 
 make_icon() {
   local file="$1"; local name="$2"; local url="$3"; local scale="$4"; local icon="$5"
+  local profile="${file%.desktop}"
   local scaleflag=""
   if [ -n "$scale" ]; then scaleflag="--force-device-scale-factor=$scale"; fi
   cat > "$DESKTOP_DIR/$file" << EOF
@@ -226,7 +230,7 @@ Type=Application
 Name=$name
 Comment=$name
 Icon=$icon
-Exec=$CHROMIUM --app=$url --window-size=800,480 --window-position=0,0 --noerrdialogs --disable-infobars --disable-session-crashed-bubble --use-fake-ui-for-media-stream --password-store=basic $scaleflag
+Exec=$CHROMIUM --user-data-dir=$PROFILE_DIR/$profile --app=$url --window-size=800,480 --window-position=0,0 --noerrdialogs --disable-infobars --disable-session-crashed-bubble --use-fake-ui-for-media-stream --password-store=basic $scaleflag
 Terminal=false
 Categories=Network;
 EOF
