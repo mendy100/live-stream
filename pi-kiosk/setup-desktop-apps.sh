@@ -290,9 +290,49 @@ chown -R pi:pi /home/pi/.config/libfm 2>/dev/null || true
 pkill -9 -f "pcmanfm --desktop" 2>/dev/null || true
 sleep 2
 
+# --- Real fix for the "Execute File" prompt: install as proper trusted
+# applications (XDG applications dir) and add them to the taskbar launchbar,
+# instead of relying on PCManFM trusting files sitting on the Desktop. ---
+APPS_DIR="/home/pi/.local/share/applications"
+mkdir -p "$APPS_DIR"
+cp "$DESKTOP_DIR"/live-stream.desktop "$DESKTOP_DIR"/ivr-quick-record.desktop \
+   "$DESKTOP_DIR"/ivr-admin.desktop "$DESKTOP_DIR"/voitex-library.desktop "$APPS_DIR/"
+chown -R pi:pi "$APPS_DIR"
+update-desktop-database "$APPS_DIR" 2>/dev/null || true
+
+PANEL_CONF="/home/pi/.config/lxpanel-pi/panels/panel"
+if [ -f "$PANEL_CONF" ] && ! grep -q "live-stream.desktop" "$PANEL_CONF"; then
+  python3 - << 'PYEOF'
+path = '/home/pi/.config/lxpanel-pi/panels/panel'
+with open(path) as f:
+    content = f.read()
+
+new_buttons = (
+    '    Button {\n      id=live-stream.desktop\n    }\n'
+    '    Button {\n      id=ivr-quick-record.desktop\n    }\n'
+    '    Button {\n      id=ivr-admin.desktop\n    }\n'
+    '    Button {\n      id=voitex-library.desktop\n    }\n'
+)
+anchor = 'id=x-terminal-emulator.desktop\n    }\n'
+if anchor in content:
+    content = content.replace(anchor, anchor + new_buttons, 1)
+    with open(path, 'w') as f:
+        f.write(content)
+PYEOF
+  chown pi:pi "$PANEL_CONF"
+fi
+
+# Restart the panel so the new taskbar buttons show up immediately
+sudo -u pi env DISPLAY=:0 XAUTHORITY=/home/pi/.Xauthority pkill -9 lxpanel-pi 2>/dev/null || true
+sleep 1
+sudo -u pi env DISPLAY=:0 XAUTHORITY=/home/pi/.Xauthority nohup lxpanel-pi --profile LXDE-pi > /tmp/lxpanel.log 2>&1 &
+disown
+
 echo ""
-echo "Done. Four desktop icons are ready with real icons, single-tap to open,"
-echo "and no 'trust this file' prompt:"
+echo "Done. Four app buttons are ready:"
+echo "  - On the Desktop (single-tap to open, real icons)"
+echo "  - AND in the taskbar (no 'trust this file' prompt at all -- use these if the"
+echo "    desktop icons still prompt)"
 echo "  - Live Stream        (auto-connects, key is baked in)"
 echo "  - IVR Quick Record   (simplified recording screen on the real IVR page)"
 echo "  - IVR Admin (Full)   (zoomed out, for everything else)"
