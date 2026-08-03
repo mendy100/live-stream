@@ -42,6 +42,15 @@ cat > "$ICON_DIR/phone-admin.svg" << 'EOF'
 </svg>
 EOF
 
+cat > "$ICON_DIR/library.svg" << 'EOF'
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="22" fill="#2f9e5c"/>
+  <rect x="26" y="26" width="12" height="48" rx="3" fill="#ffffff"/>
+  <rect x="44" y="26" width="12" height="48" rx="3" fill="#ffffff"/>
+  <rect x="62" y="30" width="12" height="44" rx="3" fill="#ffffff" transform="rotate(12 68 52)"/>
+</svg>
+EOF
+
 # --- Quick Record: a small local script injected into the real IVR page via
 # Chrome DevTools Protocol, instead of loading the full site UI ---
 cat > "$KIOSK_DIR/simplify.js" << 'JSEOF'
@@ -187,7 +196,7 @@ cat > "$KIOSK_DIR/quick-record-launch.sh" << EOF
 #!/bin/bash
 pkill -f chromium 2>/dev/null
 sleep 1
-$CHROMIUM --remote-debugging-port=9223 --app=https://ivr.teltech.info/portal/extensions/ --window-size=800,480 --window-position=0,0 --noerrdialogs --disable-infobars --disable-session-crashed-bubble --use-fake-ui-for-media-stream --password-store=basic &
+$CHROMIUM --remote-debugging-port=9223 --remote-allow-origins=* --app=https://ivr.teltech.info/portal/extensions/ --window-size=800,480 --window-position=0,0 --noerrdialogs --disable-infobars --disable-session-crashed-bubble --use-fake-ui-for-media-stream --password-store=basic &
 sleep 3
 python3 "$KIOSK_DIR/ivr-inject.py"
 EOF
@@ -229,6 +238,10 @@ make_icon "ivr-admin.desktop" "IVR Admin (Full)" \
   "https://ivr.teltech.info/portal/extensions/" "0.65" \
   "$ICON_DIR/phone-admin.svg"
 
+make_icon "voitex-library.desktop" "Voitex Library" \
+  "https://voitexcloud.com/library" "" \
+  "$ICON_DIR/library.svg"
+
 chown -R pi:pi "$KIOSK_DIR" "$DESKTOP_DIR" /home/pi/.config/autostart 2>/dev/null || true
 
 # Desktop launchers should NOT be executable -- that's what makes PCManFM treat
@@ -260,8 +273,9 @@ pkill -9 -f "pcmanfm --desktop" 2>/dev/null || true
 sleep 2
 
 echo ""
-echo "Done. Three desktop icons are ready with real icons, single-tap to open,"
+echo "Done. Four desktop icons are ready with real icons, single-tap to open,"
 echo "and no 'trust this file' prompt:"
 echo "  - Live Stream        (auto-connects, key is baked in)"
 echo "  - IVR Quick Record   (simplified recording screen on the real IVR page)"
 echo "  - IVR Admin (Full)   (zoomed out, for everything else)"
+echo "  - Voitex Library     (https://voitexcloud.com/library)"
