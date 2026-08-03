@@ -7,8 +7,22 @@ sudo -u pi pkill -f home-button.py 2>/dev/null || true
 sudo -u pi pkill -f chromium 2>/dev/null || true
 rm -f /home/pi/.config/autostart/kiosk.desktop
 
-sudo apt install -y libglib2.0-bin python3-pip attr > /dev/null 2>&1 || true
+sudo apt install -y libglib2.0-bin python3-pip attr onboard onboard-data > /dev/null 2>&1 || true
 pip3 install --break-system-packages websocket-client > /dev/null 2>&1 || pip3 install websocket-client > /dev/null 2>&1 || true
+
+# --- On-screen keyboard: auto-show whenever a text field is focused ---
+mkdir -p /home/pi/.config/autostart
+cat > /home/pi/.config/autostart/onboard.desktop << 'EOF'
+[Desktop Entry]
+Type=Application
+Name=Onboard
+Exec=onboard
+EOF
+sudo -u pi env DISPLAY=:0 XAUTHORITY=/home/pi/.Xauthority gsettings set org.onboard.auto-show enabled true 2>/dev/null || true
+sudo -u pi env DISPLAY=:0 XAUTHORITY=/home/pi/.Xauthority gsettings set org.onboard.auto-show hide-on-key-press false 2>/dev/null || true
+sudo -u pi env DISPLAY=:0 XAUTHORITY=/home/pi/.Xauthority pkill -f onboard 2>/dev/null || true
+sudo -u pi env DISPLAY=:0 XAUTHORITY=/home/pi/.Xauthority onboard > /dev/null 2>&1 &
+disown 2>/dev/null || true
 
 CHROMIUM=$(command -v chromium-browser || command -v chromium || echo chromium-browser)
 DESKTOP_DIR="/home/pi/Desktop"
