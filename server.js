@@ -110,6 +110,18 @@ app.get('/api/channels/:id', (req, res) => {
   });
 });
 
+// --- API: Rename channel (requires broadcast key) ---
+app.post('/api/channels/:id/rename', (req, res) => {
+  const channels = loadChannels();
+  const ch = channels[req.params.id];
+  if (!ch) return res.status(404).json({ error: 'Channel not found' });
+  const { name, key } = req.body;
+  if (key !== ch.broadcastKey) return res.status(403).json({ error: 'Invalid key' });
+  ch.name = (name || '').trim().slice(0, 50) || ch.name;
+  saveChannels(channels);
+  res.json({ name: ch.name });
+});
+
 // --- Pages ---
 app.get('/s/:id', (req, res) => {
   const channels = loadChannels();

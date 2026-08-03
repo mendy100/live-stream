@@ -81,7 +81,7 @@
     margin-bottom: 0.5rem;
   }
 
-  /* Live status pill */
+  /* Live status pill (also acts as the start/stop button) */
   .live-pill {
     display: flex;
     align-items: center;
@@ -95,11 +95,20 @@
     background: #1a0000;
     border: 2px solid #333;
     color: #666;
+    cursor: pointer;
+    transition: transform 0.1s;
   }
+  .live-pill:active { transform: scale(0.98); }
   .live-pill.on {
     background: #1a0000;
     border-color: #e53e3e;
     color: #fff;
+  }
+  .live-hint {
+    text-align: center;
+    font-size: 0.65rem;
+    color: #555;
+    margin-top: -0.35rem;
   }
   .live-dot {
     width: 14px; height: 14px;
@@ -173,6 +182,44 @@
     font-size: 0.8rem;
     color: #ef4444;
   }
+
+  /* Stream name + share link card */
+  .stream-name-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+  .stream-name { font-size: 1rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .edit-btn {
+    flex-shrink: 0; background: #222; color: #ccc; border: none; border-radius: 6px;
+    font-size: 0.7rem; padding: 0.3rem 0.5rem; cursor: pointer;
+  }
+  .share-link {
+    margin-top: 0.5rem; background: #0a0a0a; border: 1px solid #252525; border-radius: 8px;
+    padding: 0.45rem 0.6rem; font-size: 0.72rem; color: #9ca3af; word-break: break-all;
+    cursor: pointer;
+  }
+  .share-link.copied { color: #4ade80; border-color: #4ade80; }
+
+  /* Rename modal */
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    align-items: center; justify-content: center; z-index: 1000;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-box {
+    background: #151515; border: 2px solid #333; border-radius: 14px;
+    padding: 1.2rem; width: 380px; display: flex; flex-direction: column; gap: 0.8rem;
+  }
+  .modal-box h3 { font-size: 1rem; }
+  .modal-box input {
+    padding: 0.7rem; font-size: 1rem; border-radius: 8px; border: 2px solid #333;
+    background: #0a0a0a; color: #fff; outline: none;
+  }
+  .modal-actions { display: flex; gap: 0.6rem; }
+  .modal-actions button {
+    flex: 1; padding: 0.65rem; font-size: 0.9rem; font-weight: 600;
+    border: none; border-radius: 8px; cursor: pointer;
+  }
+  .modal-save { background: #e53e3e; color: #fff; }
+  .modal-cancel { background: #222; color: #ccc; }
 </style>
 </head>
 <body>
@@ -186,9 +233,18 @@
 
 <div class="kiosk" id="kiosk">
 
-  <!-- Left column: Pi + network status -->
+  <!-- Left column: Stream info + Pi status -->
   <div class="col">
     <div class="connection-lost" id="connection-lost">Connection lost — reconnecting...</div>
+
+    <div class="card">
+      <div class="card-title">Stream</div>
+      <div class="stream-name-row">
+        <div class="stream-name" id="stream-name">My Stream</div>
+        <button class="edit-btn" id="rename-btn">Rename</button>
+      </div>
+      <div class="share-link" id="share-link">Loading link...</div>
+    </div>
 
     <div class="card" style="flex:1">
       <div class="card-title">Raspberry Pi</div>
@@ -234,6 +290,7 @@
       <div class="live-dot"></div>
       <span id="live-text">OFFLINE</span>
     </div>
+    <div class="live-hint" id="live-hint">Tap to go live</div>
 
     <div class="card" style="flex:1; display:flex; flex-direction:column;">
       <div class="card-title">Talk from Screen</div>
@@ -244,6 +301,17 @@
     </div>
   </div>
 
+</div>
+
+<div class="modal-overlay" id="rename-modal">
+  <div class="modal-box">
+    <h3>Rename stream</h3>
+    <input type="text" id="rename-input" maxlength="50" placeholder="Stream name">
+    <div class="modal-actions">
+      <button class="modal-cancel" id="rename-cancel">Cancel</button>
+      <button class="modal-save" id="rename-save">Save</button>
+    </div>
+  </div>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
@@ -259,6 +327,15 @@
 
   const livePill = document.getElementById('live-pill');
   const liveText = document.getElementById('live-text');
+  const liveHint = document.getElementById('live-hint');
+
+  const streamNameEl = document.getElementById('stream-name');
+  const renameBtn = document.getElementById('rename-btn');
+  const shareLink = document.getElementById('share-link');
+  const renameModal = document.getElementById('rename-modal');
+  const renameInput = document.getElementById('rename-input');
+  const renameSave = document.getElementById('rename-save');
+  const renameCancel = document.getElementById('rename-cancel');
 
   const piDot = document.getElementById('pi-dot');
   const piStatusText = document.getElementById('pi-status-text');
@@ -279,6 +356,8 @@
   let audioCtx = null;
   let mediaStream = null;
   let processor = null;
+  let currentKey = null;
+  let isLive = false;
 
   // --- First-run key setup, from URL (?key=) or localStorage ---
   const urlKey = new URLSearchParams(window.location.search).get('key');
@@ -292,6 +371,49 @@
   } else {
     setup.classList.add('active');
   }
+
+  // --- Stream name + share link ---
+  const base = window.location.origin;
+  shareLink.textContent = `${base}/s/${channelId}`;
+  shareLink.addEventListener('click', () => {
+    navigator.clipboard.writeText(`${base}/s/${channelId}`).then(() => {
+      shareLink.classList.add('copied');
+      const original = shareLink.textContent;
+      shareLink.textContent = 'Copied!';
+      setTimeout(() => { shareLink.textContent = original; shareLink.classList.remove('copied'); }, 1500);
+    });
+  });
+
+  fetch(`/api/channels/${channelId}`)
+    .then(r => r.json())
+    .then(data => { if (data.name) streamNameEl.textContent = data.name; })
+    .catch(() => {});
+
+  renameBtn.addEventListener('click', () => {
+    renameInput.value = streamNameEl.textContent;
+    renameModal.classList.add('active');
+    renameInput.focus();
+  });
+  renameCancel.addEventListener('click', () => renameModal.classList.remove('active'));
+  renameSave.addEventListener('click', () => {
+    const newName = renameInput.value.trim();
+    if (!newName || !currentKey) { renameModal.classList.remove('active'); return; }
+    fetch(`/api/channels/${channelId}/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName, key: currentKey }),
+    })
+      .then(r => r.json())
+      .then(data => { if (data.name) streamNameEl.textContent = data.name; })
+      .finally(() => renameModal.classList.remove('active'));
+  });
+
+  // --- Tap the live pill to explicitly start/stop broadcasting ---
+  livePill.addEventListener('click', () => {
+    if (!socket || !currentKey) return;
+    if (isLive) socket.emit('stop-broadcast');
+    else socket.emit('start-broadcast', currentKey);
+  });
 
   connectBtn.addEventListener('click', () => {
     const key = keyInput.value.trim();
@@ -307,6 +429,7 @@
   }
 
   function connect(key) {
+    currentKey = key;
     socket = io({ query: { broadcaster: '1', channel: channelId, type: 'control' } });
 
     socket.on('connect', () => {
@@ -345,9 +468,11 @@
     });
   }
 
-  function setLive(isLive) {
-    livePill.classList.toggle('on', !!isLive);
+  function setLive(live) {
+    isLive = !!live;
+    livePill.classList.toggle('on', isLive);
     liveText.textContent = isLive ? 'LIVE' : 'OFFLINE';
+    liveHint.textContent = isLive ? 'Tap to stop' : 'Tap to go live';
   }
 
   function updatePiStatus(info) {
